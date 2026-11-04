@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import { Types, type ClientSession } from 'mongoose';
 import {
   assignableRoles,
   hasRoleAtLeast,
@@ -6,14 +6,17 @@ import {
   type CreateInviteInput,
   type InviteDto,
   type InvitePreviewDto,
+  type JoinLinkDto,
 } from '@teamtrack/shared';
 import { env } from '../../config/env';
 import { withTransaction } from '../../db/transaction';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../errors/AppError';
 import { hashPassword } from '../../auth/password';
-import { generateOpaqueToken, hashToken } from '../../auth/tokens';
+import { deriveJoinLinkToken, generateOpaqueToken, hashToken } from '../../auth/tokens';
 import type { AuthContext, ClientMeta } from '../../auth/context';
 import { inviteRepository } from '../../repositories/inviteRepository';
+import { joinLinkRepository } from '../../repositories/joinLinkRepository';
+import type { IJoinLink } from '../../models/JoinLink';
 import { userRepository } from '../../repositories/userRepository';
 import { workspaceRepository } from '../../repositories/workspaceRepository';
 import { memberRepository, projectRepository } from '../../repositories/projectRepository';
@@ -24,6 +27,48 @@ import { projectsService } from '../projects/projects.service';
 
 const INVITE_TTL_DAYS = 7;
 const invalidLink = () => new NotFoundError('Invite');
+/** People who join by a shared link are always members; the owner can change their role afterwards. */
+const JOIN_LINK_ROLE = 'member' as const;
+
+const toJoinLinkDto = (link: IJoinLink, token: string): JoinLinkDto => ({
+  url: `${env.CLIENT_URL}/invite/${token}`,
+  expiresAt: link.expiresAt.toISOString(),
+  useCount: link.useCount,
+});
+
+async function joinViaLink(input: AcceptInviteInput, passwordHash: string, meta: ClientMeta, session: ClientSession): Promise<IssuedSession> {
+  const link = await joinLinkRepository.findActiveByTokenHash(hashToken(input.token), session);
+  if (!link) throw invalidLink();
+  if (!input.email) throw new ValidationError([{ path: 'email', message: 'Email is required' }]);
+
+  const workspace = await workspaceRepository.findById(link.workspaceId, session);
+  if (!workspace) throw invalidLink();
+  // The link carries its creator's authority: it lapses if they are suspended or no longer the owner.
+  const creator = await userRepository.findById(link.workspaceId, link.createdBy, session);
+  if (!creator || creator.status !== 'active' || creator.role !== 'owner') throw invalidLink();
+  if (await userRepository.findByEmail(link.workspaceId, input.email, session)) {
+    throw new ConflictError('An account with this email already exists in the workspace');
+  }
+
+  // They are joining another way, so an email invite still pending for them is now moot.
+  await inviteRepository.revokePendingForEmail(link.workspaceId, input.email, session);
+  const user = await userRepository.create(
+    {
+      workspaceId: link.workspaceId,
+      email: input.email,
+      name: input.name,
+      role: JOIN_LINK_ROLE,
+      status: 'active',
+      passwordHash,
+      passwordChangedAt: new Date(),
+      lastSeenAt: new Date(),
+      createdBy: link.createdBy,
+    } as Parameters<typeof userRepository.create>[0],
+    session,
+  );
+  await joinLinkRepository.recordUse(link.workspaceId, link._id, session);
+  return authService.issueSession(user, workspace, meta, { session });
+}
 
 export const invitesService = {
   async create(ctx: AuthContext, input: CreateInviteInput): Promise<InviteDto> {
@@ -101,19 +146,58 @@ export const invitesService = {
     if (!revoked) throw new NotFoundError('Invite');
   },
 
+  /** The live join link, or null if there is none (or it can no longer be rebuilt after a secret rotation). */
+  async getJoinLink(ctx: AuthContext): Promise<JoinLinkDto | null> {
+    const link = await joinLinkRepository.findActive(ctx.workspaceId);
+    if (!link) return null;
+    const token = deriveJoinLinkToken(link._id);
+    return hashToken(token) === link.tokenHash ? toJoinLinkDto(link, token) : null;
+  },
+
+  /** Creates the workspace's join link, replacing (and invalidating) any earlier one. */
+  async generateJoinLink(ctx: AuthContext): Promise<JoinLinkDto> {
+    const id = new Types.ObjectId();
+    const token = deriveJoinLinkToken(id);
+    return withTransaction(async (session) => {
+      await joinLinkRepository.revokeLive(ctx.workspaceId, session);
+      const link = await joinLinkRepository.create(
+        {
+          _id: id,
+          workspaceId: ctx.workspaceId,
+          tokenHash: hashToken(token),
+          createdBy: ctx.userId,
+          expiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 24 * 3600_000),
+        },
+        session,
+      );
+      return toJoinLinkDto(link, token);
+    });
+  },
+
+  async revokeJoinLink(ctx: AuthContext): Promise<void> {
+    await joinLinkRepository.revokeLive(ctx.workspaceId);
+  },
+
   async preview(token: string): Promise<InvitePreviewDto> {
-    const invite = await inviteRepository.findPendingByTokenHash(hashToken(token));
-    if (!invite) throw invalidLink();
-    const workspace = await workspaceRepository.findById(invite.workspaceId);
+    const tokenHash = hashToken(token);
+    const invite = await inviteRepository.findPendingByTokenHash(tokenHash);
+    if (invite) {
+      const workspace = await workspaceRepository.findById(invite.workspaceId);
+      if (!workspace) throw invalidLink();
+      return { email: invite.email, role: invite.role, workspaceName: workspace.name };
+    }
+    const link = await joinLinkRepository.findActiveByTokenHash(tokenHash);
+    if (!link) throw invalidLink();
+    const workspace = await workspaceRepository.findById(link.workspaceId);
     if (!workspace) throw invalidLink();
-    return { email: invite.email, role: invite.role, workspaceName: workspace.name };
+    return { email: null, role: JOIN_LINK_ROLE, workspaceName: workspace.name };
   },
 
   async accept(input: AcceptInviteInput, meta: ClientMeta): Promise<IssuedSession> {
     const passwordHash = await hashPassword(input.password);
     return withTransaction(async (session) => {
       const invite = await inviteRepository.findPendingByTokenHash(hashToken(input.token), session);
-      if (!invite) throw invalidLink();
+      if (!invite) return joinViaLink(input, passwordHash, meta, session);
       const claimed = await inviteRepository.markAccepted(invite.workspaceId, invite._id, session);
       if (!claimed) throw invalidLink();
 

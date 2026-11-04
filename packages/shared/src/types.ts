@@ -63,8 +63,15 @@ export interface InviteDto {
   createdAt: string;
 }
 
+export interface JoinLinkDto {
+  url: string;
+  expiresAt: string;
+  useCount: number;
+}
+
 export interface InvitePreviewDto {
-  email: string;
+  /** Null for a team join link: the person joining enters their own email. */
+  email: string | null;
   role: Role;
   workspaceName: string;
 }

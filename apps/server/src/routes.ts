@@ -38,6 +38,10 @@ export function apiRouter(): Router {
 
   r.get('/invites', requireRole('manager'), invitesController.list);
   r.post('/invites', requireRole('manager'), invitesController.create);
+  // Before /invites/:id, which would otherwise capture "link" as an id.
+  r.get('/invites/link', requireRole('owner'), invitesController.getJoinLink);
+  r.post('/invites/link', requireRole('owner'), invitesController.generateJoinLink);
+  r.delete('/invites/link', requireRole('owner'), invitesController.revokeJoinLink);
   r.delete('/invites/:id', requireRole('manager'), invitesController.revoke);
 
   r.get('/users', usersController.list);

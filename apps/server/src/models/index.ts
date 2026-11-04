@@ -3,6 +3,7 @@ import { EmailLog } from './EmailLog';
 import { IdempotencyKey } from './IdempotencyKey';
 import { Invite } from './Invite';
 import { JobLock } from './JobLock';
+import { JoinLink } from './JoinLink';
 import { Label } from './Label';
 import { Notification } from './Notification';
 import { Outbox } from './Outbox';
@@ -21,7 +22,7 @@ import { BOARDS_MODELS } from '../modules/boards/models';
 import { PLANNING_MODELS } from '../modules/planning/models';
 import { REPORTS_MODELS } from '../modules/reports/models';
 
-export { Counter, EmailLog, IdempotencyKey, Invite, JobLock, Label, Notification, Outbox, Project, ProjectMember, RateLimitHit, Session, SnakeScore, Task, User, Workspace };
+export { Counter, EmailLog, IdempotencyKey, Invite, JobLock, JoinLink, Label, Notification, Outbox, Project, ProjectMember, RateLimitHit, Session, SnakeScore, Task, User, Workspace };
 
 /** Every model the migration runner manages indexes for. */
 export const ALL_MODELS = [
@@ -29,6 +30,7 @@ export const ALL_MODELS = [
   User,
   Session,
   Invite,
+  JoinLink,
   Project,
   ProjectMember,
   Task,

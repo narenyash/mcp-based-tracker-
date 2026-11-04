@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { UserPlus } from 'lucide-react';
+import { Check, Copy, UserPlus } from 'lucide-react';
 import { assignableRoles, createInviteSchema, hasRoleAtLeast, outranks, type Role, type UserDto } from '@teamtrack/shared';
 import { invitesApi, usersApi } from '../api/endpoints';
 import { useAuth } from '../stores/auth';
@@ -55,6 +55,8 @@ export function TeamPage() {
           )
         }
       />
+
+      {myRole === 'owner' && <JoinLinkCard />}
 
       <Input aria-label="Search people" placeholder="Search by name or email" className="mb-4 max-w-xs" value={search} onChange={(e) => setSearch(e.target.value)} />
 
@@ -120,6 +122,70 @@ export function TeamPage() {
 
       <InviteDialog open={inviting} onClose={() => setInviting(false)} roles={assignableRoles(myRole)} />
     </>
+  );
+}
+
+function JoinLinkCard() {
+  const qc = useQueryClient();
+  const [copied, setCopied] = useState(false);
+  const link = useQuery({ queryKey: ['join-link'], queryFn: invitesApi.getJoinLink });
+
+  const refresh = () => {
+    setCopied(false);
+    void qc.invalidateQueries({ queryKey: ['join-link'] });
+  };
+  const onError = (err: unknown) => toastError(errorMessage(err));
+  const generate = useMutation({ mutationFn: invitesApi.generateJoinLink, onSuccess: refresh, onError });
+  const turnOff = useMutation({ mutationFn: invitesApi.revokeJoinLink, onSuccess: refresh, onError });
+
+  const copy = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      toast('Link copied');
+    } catch {
+      toastError("Couldn't copy automatically. Select the link and copy it yourself.");
+    }
+  };
+
+  return (
+    <section className="mb-6 rounded-lg border border-border p-4">
+      <h2 className="text-sm font-medium">Team invite link</h2>
+      <p className="mt-1 text-xs text-muted">Anyone with this link can join your team as a member, so only share it with people you trust.</p>
+
+      {link.isPending ? (
+        <Spinner className="mt-3" />
+      ) : link.isError ? (
+        <div className="mt-3">
+          <ErrorNote>{errorMessage(link.error)}</ErrorNote>
+        </div>
+      ) : link.data ? (
+        <>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Input aria-label="Team invite link" readOnly className="min-w-0 flex-1 basis-64 font-mono text-xs" value={link.data.url} onFocus={(e) => e.target.select()} />
+            <Button variant="primary" onClick={() => void copy(link.data!.url)}>
+              {copied ? <Check className="size-4" /> : <Copy className="size-4" />} {copied ? 'Copied' : 'Copy link'}
+            </Button>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="mr-auto text-xs text-muted">
+              Expires {new Date(link.data.expiresAt).toLocaleDateString()} · {link.data.useCount} joined
+            </p>
+            <Button size="sm" variant="ghost" loading={generate.isPending} onClick={() => generate.mutate()}>
+              Generate new link
+            </Button>
+            <Button size="sm" variant="ghost" loading={turnOff.isPending} onClick={() => turnOff.mutate()}>
+              Turn off
+            </Button>
+          </div>
+          <p className="mt-1 text-xs text-muted">Generating a new link or turning it off stops the current link from working.</p>
+        </>
+      ) : (
+        <Button className="mt-3" variant="primary" loading={generate.isPending} onClick={() => generate.mutate()}>
+          Generate link
+        </Button>
+      )}
+    </section>
   );
 }
 

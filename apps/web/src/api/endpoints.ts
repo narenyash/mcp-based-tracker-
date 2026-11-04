@@ -16,6 +16,7 @@ import type {
   CreateProjectInput,
   InviteDto,
   InvitePreviewDto,
+  JoinLinkDto,
   LoginInput,
   Page,
   ProjectDto,
@@ -45,6 +46,9 @@ export const invitesApi = {
   list: () => api.get<{ items: InviteDto[] }>('/invites').then((r) => r.data.items),
   create: (input: CreateInviteInput) => api.post<InviteDto>('/invites', input).then((r) => r.data),
   revoke: (id: string) => api.delete(`/invites/${id}`),
+  getJoinLink: () => api.get<JoinLinkDto | null>('/invites/link').then((r) => r.data),
+  generateJoinLink: () => api.post<JoinLinkDto>('/invites/link').then((r) => r.data),
+  revokeJoinLink: () => api.delete('/invites/link'),
 };
 
 export const usersApi = {

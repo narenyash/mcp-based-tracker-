@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import { ROLES, type Role } from '@teamtrack/shared';
@@ -67,6 +67,15 @@ export function verifyAccessToken(token: string): {
 /** 256-bit random token, URL-safe (43 chars). Only its SHA-256 is ever stored. */
 export function generateOpaqueToken(): string {
   return randomBytes(32).toString('base64url');
+}
+
+/**
+ * A join link's token is derived from its id, so the owner can copy the link again later while the
+ * database only ever holds its hash. Rotating JWT_ACCESS_SECRET changes the derived value; the owner
+ * then generates a new link.
+ */
+export function deriveJoinLinkToken(linkId: Types.ObjectId): string {
+  return createHmac('sha256', env.JWT_ACCESS_SECRET).update(`join-link:${linkId.toHexString()}`).digest('base64url');
 }
 
 export function hashToken(token: string): string {

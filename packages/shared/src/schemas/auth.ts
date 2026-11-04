@@ -42,6 +42,8 @@ export const inviteTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'Invali
 
 export const acceptInviteSchema = z.object({
   token: inviteTokenSchema,
+  /** Required for a team join link; an email invite already knows its address and ignores this. */
+  email: emailSchema.optional(),
   name: personNameSchema,
   password: passwordSchema,
 });
