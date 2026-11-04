@@ -46,19 +46,18 @@ services:
       - key: S3_UPLOAD_PREFIX
         sync: false
       - key: MAIL_TRANSPORT
-        value: smtp
-      - key: SMTP_HOST
-        value: smtp.gmail.com
-      - key: SMTP_PORT
-        value: '465'
-      - key: SMTP_SECURE
-        value: 'true'
-      - key: SMTP_USER
+        value: emailjs
+      - key: EMAILJS_SERVICE_ID
         sync: false
-      # A Gmail app password, not the account password.
-      - key: SMTP_PASS
+      - key: EMAILJS_PUBLIC_KEY
         sync: false
-      - key: MAIL_FROM
+      - key: EMAILJS_PRIVATE_KEY
+        sync: false
+      - key: EMAILJS_TEMPLATE_INVITE
+        sync: false
+      - key: EMAILJS_TEMPLATE_ASSIGNED
+        sync: false
+      - key: EMAILJS_TEMPLATE_GENERIC
         sync: false
       # Open for creating your workspace; set to false once everyone is in (invites still work).
       - key: ALLOW_WORKSPACE_SIGNUP

@@ -47,7 +47,7 @@ One web service runs the API and serves the web app from the same origin (`Docke
    - `CLIENT_URL`: the service URL, e.g. `https://teamtrack.onrender.com`
    - `MONGODB_URI`, `MONGODB_DB_NAME`: the Atlas cluster and database name
    - `AWS_*`, `S3_UPLOAD_PREFIX`: the S3 bucket
-   - `SMTP_USER`, `SMTP_PASS` (a Gmail app password), `MAIL_FROM`
+   - `EMAILJS_*`: the EmailJS service, keys and three template IDs (see `apps/server/.env.example`)
 3. Each deploy runs migrations first (`preDeployCommand`), then switches traffic once `/readyz` is healthy.
 4. Sign up to create the workspace, invite everyone, then set `ALLOW_WORKSPACE_SIGNUP=false`.
 

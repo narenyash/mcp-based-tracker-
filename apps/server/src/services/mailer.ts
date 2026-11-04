@@ -5,6 +5,7 @@ import { templates, type TemplateData, type TemplateName } from '../emails/templ
 import { EmailLog } from '../models/EmailLog';
 import { logger } from '../observability/logger';
 import { errorText } from '../workers/errorText';
+import { buildEmailJsRequest, emailJsConfigFromEnv, sendViaEmailJs } from './emailjs';
 
 export type EmailJob = {
   [K in TemplateName]: { template: K; to: string; data: TemplateData<K>; workspaceId?: string };
@@ -36,6 +37,11 @@ export function setTransporter(t: Transporter | undefined): void {
 
 /** Checks SMTP credentials at boot so a bad app password shows up in the log immediately, not on the first email. */
 export async function verifyMailer(): Promise<void> {
+  if (env.MAIL_TRANSPORT === 'emailjs') {
+    // EmailJS has no credential check that doesn't send a real email, so a bad key shows up on the first send.
+    logger.info({ serviceId: env.EMAILJS_SERVICE_ID }, 'emails are sent through EmailJS');
+    return;
+  }
   if (env.MAIL_TRANSPORT !== 'smtp') {
     logger.info('emails are printed to the log (MAIL_TRANSPORT=json), not sent');
     return;
@@ -64,10 +70,16 @@ export async function sendEmail(job: EmailJob, outboxId?: Types.ObjectId): Promi
     outboxId: outboxId ?? null,
   };
   try {
-    const info = (await getTransporter().sendMail({ from: env.MAIL_FROM, to, subject, html, text })) as {
-      messageId?: string;
-    };
-    await EmailLog.create({ ...log, status: 'sent', providerMessageId: info.messageId ?? null });
+    let messageId: string | undefined;
+    if (env.MAIL_TRANSPORT === 'emailjs') {
+      await sendViaEmailJs(buildEmailJsRequest(job, { to, subject, html }, emailJsConfigFromEnv()));
+    } else {
+      const info = (await getTransporter().sendMail({ from: env.MAIL_FROM, to, subject, html, text })) as {
+        messageId?: string;
+      };
+      messageId = info.messageId;
+    }
+    await EmailLog.create({ ...log, status: 'sent', providerMessageId: messageId ?? null });
     if (env.MAIL_TRANSPORT === 'json') logger.info({ to: job.to, subject, text }, 'email captured (json transport, not delivered)');
   } catch (err) {
     await EmailLog.create({ ...log, status: 'failed', error: errorText(err) });

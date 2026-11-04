@@ -59,7 +59,14 @@ const schema = z.object({
   ALLOW_WORKSPACE_SIGNUP: bool.default('true'),
   RATE_LIMIT_ENABLED: bool.default('true'),
 
-  MAIL_TRANSPORT: z.enum(['smtp', 'json']).default('smtp'),
+  MAIL_TRANSPORT: z.enum(['smtp', 'json', 'emailjs']).default('smtp'),
+  EMAILJS_SERVICE_ID: z.string().optional(),
+  EMAILJS_PUBLIC_KEY: z.string().optional(),
+  EMAILJS_PRIVATE_KEY: z.string().optional(),
+  EMAILJS_TEMPLATE_INVITE: z.string().optional(),
+  EMAILJS_TEMPLATE_ASSIGNED: z.string().optional(),
+  /** Used for every email without its own template; renders the app's HTML as {{{html_body}}}. */
+  EMAILJS_TEMPLATE_GENERIC: z.string().optional(),
   SMTP_HOST: z.string().default('localhost'),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_SECURE: bool.default('false'),
@@ -97,6 +104,12 @@ const refined = schema.superRefine((e, ctx) => {
       path: ['SMTP_PASS'],
       message: `SMTP_USER is ${e.SMTP_USER} but SMTP_PASS is empty. For Gmail, create an app password (Google Account > Security > App passwords) and set SMTP_PASS in apps/server/.env, or set MAIL_TRANSPORT=json to print emails instead`,
     });
+  }
+  if (e.MAIL_TRANSPORT === 'emailjs') {
+    const required = ['EMAILJS_SERVICE_ID', 'EMAILJS_PUBLIC_KEY', 'EMAILJS_PRIVATE_KEY', 'EMAILJS_TEMPLATE_INVITE', 'EMAILJS_TEMPLATE_ASSIGNED', 'EMAILJS_TEMPLATE_GENERIC'] as const;
+    for (const key of required) {
+      if (!e[key]) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: 'required when MAIL_TRANSPORT=emailjs' });
+    }
   }
   for (const pair of e.JWT_PREVIOUS_KEYS.split(',').filter(Boolean)) {
     const idx = pair.indexOf(':');
