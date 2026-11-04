@@ -26,15 +26,15 @@ jobs:
       # Where mongodb-memory-server keeps its mongod binary; cached below so tests don't download ~100 MB each run.
       MONGOMS_DOWNLOAD_DIR: ${{ github.workspace }}/.cache/mongodb-binaries
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Cache mongod binary (mongodb-memory-server)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/.cache/mongodb-binaries
           key: mongoms-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -68,12 +68,12 @@ jobs:
       matrix:
         image: [server, web, render]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build teamtrack-${{ matrix.image }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.${{ matrix.image }}
