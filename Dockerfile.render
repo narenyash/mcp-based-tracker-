@@ -1,0 +1,54 @@
+# syntax=docker/dockerfile:1.7
+#
+# One-service image for Render: the API also serves the built web app (WEB_DIST_DIR), so the browser sees
+# a single origin without a separate nginx. Same build as Dockerfile.server plus the Vite build.
+#   docker build -f Dockerfile.render -t teamtrack .
+# Migrations ship in the image (render.yaml runs them as the pre-deploy command):
+#   node dist/scripts/migrate.js
+
+ARG NODE_VERSION=22
+
+FROM node:${NODE_VERSION}-bookworm-slim AS base
+WORKDIR /app
+ENV npm_config_update_notifier=false \
+    npm_config_fund=false \
+    npm_config_audit=false
+
+FROM base AS manifests
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/server/package.json apps/server/
+COPY apps/web/package.json apps/web/
+
+FROM manifests AS build
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+COPY tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/server apps/server
+COPY apps/web apps/web
+RUN npm run build --workspace @teamtrack/server \
+ && npm run build --workspace @teamtrack/web
+
+FROM manifests AS prod-deps
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev --workspace @teamtrack/server \
+ && mkdir -p apps/server/node_modules
+
+FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+ENV NODE_ENV=production \
+    PORT=10000 \
+    WEB_DIST_DIR=/app/web
+WORKDIR /app
+
+# Root-owned and read-only for the app user: a compromised process can't rewrite its own code.
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/apps/server/node_modules ./apps/server/node_modules
+COPY --from=build /app/apps/server/package.json ./apps/server/package.json
+COPY --from=build /app/apps/server/dist ./apps/server/dist
+COPY --from=build /app/apps/web/dist ./web
+
+WORKDIR /app/apps/server
+USER node
+EXPOSE 10000
+CMD ["node", "--enable-source-maps", "dist/src/index.js"]

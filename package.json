@@ -1,0 +1,40 @@
+{
+  "name": "teamtrack",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,green \"npm run dev -w @teamtrack/server\" \"npm run dev -w @teamtrack/web\"",
+    "build": "npm run build -w @teamtrack/server && npm run build -w @teamtrack/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "npm run test --workspaces --if-present",
+    "db:migrate": "npm run db:migrate -w @teamtrack/server",
+    "db:seed": "npm run db:seed -w @teamtrack/server",
+    "dev:memory": "concurrently -k -n server,web -c blue,green \"npm run dev:memory -w @teamtrack/server\" \"npm run dev -w @teamtrack/web\"",
+    "start": "npm run start -w @teamtrack/server",
+    "db:migrate:dist": "cd apps/server && node dist/scripts/migrate.js",
+    "ci": "npm run lint && npm run typecheck && npm test && npm run build",
+    "docker:infra": "docker compose up -d mongo mailpit",
+    "docker:up": "docker compose --profile app up -d --build",
+    "docker:down": "docker compose --profile app down",
+    "docker:logs": "docker compose --profile app logs -f server web",
+    "docker:migrate": "docker compose --profile app run --rm migrate"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "concurrently": "^9.2.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "prettier": "^3.9.10",
+    "typescript-eslint": "^8.72.1"
+  },
+  "type": "module"
+}

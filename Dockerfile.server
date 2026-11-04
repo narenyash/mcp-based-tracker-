@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1.7
+#
+# TeamTrack API (Express + Socket.io + outbox worker + scheduler), built from the repo root:
+#   docker build -f Dockerfile.server -t teamtrack-server .
+# Migrations ship in the same image:
+#   docker run --rm --env-file server.env teamtrack-server node dist/scripts/migrate.js
+
+ARG NODE_VERSION=22
+
+# ---- base: pinned Node on Debian slim (glibc, so argon2's prebuilt binary loads without a compiler)
+FROM node:${NODE_VERSION}-bookworm-slim AS base
+WORKDIR /app
+ENV npm_config_update_notifier=false \
+    npm_config_fund=false \
+    npm_config_audit=false
+
+# ---- manifests: only what npm needs to resolve the workspace graph, so dependency layers stay cached
+# until a package.json or the lockfile changes. Every workspace manifest is copied because the root
+# lockfile references all of them.
+FROM base AS manifests
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/server/package.json apps/server/
+COPY apps/web/package.json apps/web/
+
+# ---- build: full deps for the server workspace, then bundle with tsup. @teamtrack/shared ships TypeScript
+# source and is inlined into the bundle (tsup.config.ts: noExternal), so the runtime never needs it.
+FROM manifests AS build
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --workspace @teamtrack/server --workspace @teamtrack/shared
+COPY tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/server apps/server
+RUN npm run build --workspace @teamtrack/server
+
+# ---- prod-deps: runtime dependencies only (no tsup/tsx/vitest/mongodb-memory-server).
+FROM manifests AS prod-deps
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev --workspace @teamtrack/server \
+ && mkdir -p apps/server/node_modules
+
+# ---- runtime
+FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+ENV NODE_ENV=production \
+    PORT=4000
+WORKDIR /app
+
+# Root-owned and read-only for the app user: a compromised process can't rewrite its own code.
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/apps/server/node_modules ./apps/server/node_modules
+COPY --from=build /app/apps/server/package.json ./apps/server/package.json
+COPY --from=build /app/apps/server/dist ./apps/server/dist
+
+WORKDIR /app/apps/server
+USER node
+EXPOSE 4000
+
+# Liveness only (process up, event loop responsive). Readiness (/readyz) is for the load balancer.
+HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+
+# Node is PID 1 and handles SIGTERM itself (graceful drain in src/index.ts); run with --init / `init: true`
+# if you want zombie reaping, but it is not required.
+CMD ["node", "--enable-source-maps", "dist/src/index.js"]

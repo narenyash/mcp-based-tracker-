@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1.7
+#
+# TeamTrack web: Vite build served by unprivileged nginx, which also reverse-proxies /api and /socket.io
+# to the API so the browser sees one origin (the SameSite=strict refresh cookie depends on that).
+#   docker build -f Dockerfile.web -t teamtrack-web .
+#   docker run -p 8080:8080 -e API_UPSTREAM=server:4000 teamtrack-web
+
+ARG NODE_VERSION=22
+ARG NGINX_VERSION=1.27
+
+# ---- build
+FROM node:${NODE_VERSION}-bookworm-slim AS build
+WORKDIR /app
+ENV npm_config_update_notifier=false \
+    npm_config_fund=false \
+    npm_config_audit=false
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/server/package.json apps/server/
+COPY apps/web/package.json apps/web/
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --workspace @teamtrack/web --workspace @teamtrack/shared
+COPY tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/web apps/web
+# Type-checks, then emits content-hashed assets under dist/assets.
+RUN npm run build --workspace @teamtrack/web
+
+# ---- runtime: nginx as uid 101, listening on 8080 (no root, no privileged port)
+FROM nginxinc/nginx-unprivileged:${NGINX_VERSION}-alpine AS runtime
+# The image's entrypoint renders /etc/nginx/templates/*.template with envsubst (only for variables that
+# are actually set, so nginx's own $uri/$host are untouched) into /etc/nginx/conf.d/.
+ENV API_UPSTREAM=server:4000 \
+    NGINX_ENVSUBST_FILTER=^API_
+USER root
+RUN rm -f /etc/nginx/conf.d/default.conf
+USER 101
+COPY deploy/nginx.conf /etc/nginx/templates/default.conf.template
+COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+EXPOSE 8080
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/nginx-health || exit 1

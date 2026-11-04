@@ -1,0 +1,86 @@
+# Local infrastructure: single-node MongoDB replica set (needed for transactions) + Mailpit (SMTP catcher).
+#   docker compose up -d                       mongo + mailpit only, for `npm run dev` on the host
+#   npm run docker:up                          the full prod-like stack (profile "app"):
+#                                              migrate -> server -> web, open http://localhost:8080
+# The app profile needs JWT_ACCESS_SECRET (48+ random chars) in the shell or a root .env file (never committed);
+# without it the server exits at boot with a clear config error.
+services:
+  mongo:
+    image: mongo:7
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports: ['27017:27017']
+    volumes: ['mongo-data:/data/db']
+    healthcheck:
+      test: >
+        mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }"
+      interval: 5s
+      timeout: 10s
+      retries: 20
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports: ['1025:1025', '8025:8025']
+
+  # ---- prod-like app stack (profile "app")
+
+  # One-shot: applies pending migrations before new code starts (the server refuses to boot in
+  # production while migrations are pending).
+  migrate:
+    profiles: ['app']
+    build: { context: ., dockerfile: Dockerfile.server }
+    image: teamtrack-server:local
+    command: ['node', '--enable-source-maps', 'dist/scripts/migrate.js']
+    environment: &server-env
+      NODE_ENV: production
+      LOG_LEVEL: info
+      # The replica-set member is registered as localhost:27017 (so host tools can connect);
+      # directConnection lets containers reach the same primary as mongo:27017.
+      MONGO_URI: mongodb://mongo:27017/teamtrack?replicaSet=rs0&directConnection=true
+      CLIENT_URL: http://localhost:8080
+      TRUST_PROXY: '1'
+      # `:-` rather than `:?` so plain `docker compose up` (infra only) works without it.
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-}
+      MAIL_TRANSPORT: smtp
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+      MAIL_FROM: TeamTrack <no-reply@teamtrack.local>
+      STORAGE_DRIVER: memory
+      # Production refuses memory storage unless told otherwise; fine for this throwaway local stack.
+      ALLOW_MEMORY_STORAGE: 'true'
+      METRICS_TOKEN: ${METRICS_TOKEN:-local-metrics-token-change-me}
+    depends_on:
+      mongo: { condition: service_healthy }
+    restart: 'no'
+
+  server:
+    profiles: ['app']
+    build: { context: ., dockerfile: Dockerfile.server }
+    image: teamtrack-server:local
+    init: true
+    environment: *server-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      mailpit: { condition: service_started }
+    # Not published: only nginx (and `docker compose exec`) reach it. Uncomment to probe /readyz from the host.
+    # ports: ['4000:4000']
+    stop_grace_period: 20s
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ['/tmp']
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+
+  web:
+    profiles: ['app']
+    build: { context: ., dockerfile: Dockerfile.web }
+    image: teamtrack-web:local
+    environment:
+      API_UPSTREAM: server:4000
+    ports: ['8080:8080']
+    depends_on:
+      server: { condition: service_healthy }
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+
+volumes:
+  mongo-data:

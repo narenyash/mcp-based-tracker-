@@ -1,0 +1,28 @@
+# Build context for Dockerfile.server and Dockerfile.web. Keep it small and secret-free:
+# dependencies are installed inside the image from package-lock.json, never copied from the host.
+**/node_modules
+**/dist
+**/coverage
+**/.vite
+**/*.log
+**/*.tsbuildinfo
+
+# Secrets and local config never enter an image (config comes from the runtime environment).
+**/.env
+**/.env.*
+!**/.env.example
+
+.git
+.github
+.vscode
+.idea
+.claude
+docs
+*.md
+docker-compose*.yml
+Dockerfile.*
+.dockerignore
+
+# Tests are not needed to build or run the images.
+apps/server/tests
+apps/server/vitest.config.ts

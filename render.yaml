@@ -1,0 +1,65 @@
+# Render Blueprint: one web service that runs the API and serves the web app (Dockerfile.render).
+# New > Blueprint in the Render dashboard, pick this repo, then fill in the values marked `sync: false`.
+# Secrets never live in this file.
+services:
+  - type: web
+    name: teamtrack
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    # Starter, not Free: a free instance sleeps after 15 idle minutes (a ~1 minute hang on the next visit)
+    # and stops the email worker and scheduled jobs while asleep. Pre-deploy commands also need a paid plan.
+    plan: starter
+    # Closest Render region to the S3 bucket (ap-south-1). Keep Atlas in a nearby region too.
+    region: singapore
+    healthCheckPath: /readyz
+    # Applies pending migrations before the new version takes traffic; the server refuses to boot without them.
+    preDeployCommand: node --enable-source-maps dist/scripts/migrate.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      # Render's load balancer is the one proxy in front of the app.
+      - key: TRUST_PROXY
+        value: '1'
+      # The service's public URL, e.g. https://teamtrack.onrender.com (or your custom domain).
+      - key: CLIENT_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      # Atlas connection string for the shared cluster, and the database name (wmsnk).
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        sync: false
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_BUCKET_NAME
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_UPLOAD_PREFIX
+        sync: false
+      - key: MAIL_TRANSPORT
+        value: smtp
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: '465'
+      - key: SMTP_SECURE
+        value: 'true'
+      - key: SMTP_USER
+        sync: false
+      # A Gmail app password, not the account password.
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      # Open for creating your workspace; set to false once everyone is in (invites still work).
+      - key: ALLOW_WORKSPACE_SIGNUP
+        value: 'true'

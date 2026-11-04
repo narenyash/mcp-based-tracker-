@@ -1,0 +1,81 @@
+@import 'tailwindcss';
+
+/* Design tokens. Components use only these, so dark mode is a token swap.
+   A workshop job board: graphite on paper (neutrals barely warm) and one ink-blue accent.
+   accent = primary button fill (near-black ink); ink = the one colour: progress, selection, unread, focus. */
+@theme {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --text-2xs: 11px;
+  --text-2xs--line-height: 16px;
+  --color-bg: #fdfdfc;
+  --color-surface: #f6f6f4;
+  --color-fg: #1a1917;
+  --color-muted: #55534e;
+  --color-subtle: #75726c;
+  --color-border: #e5e4e0;
+  --color-hover: #f0efec;
+  --color-accent: #1a1917;
+  --color-accent-fg: #fdfdfc;
+  --color-ink: #2f54c8;
+  --color-ink-fg: #ffffff;
+  --color-danger: #dc2626;
+  --color-success: #16a34a;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #141413;
+    --color-surface: #0f0f0e;
+    --color-fg: #ecebe8;
+    --color-muted: #a6a49f;
+    --color-subtle: #87857f;
+    --color-border: #2a2927;
+    --color-hover: #1f1f1d;
+    --color-accent: #ecebe8;
+    --color-accent-fg: #141413;
+    --color-ink: #8ca6f2;
+    --color-ink-fg: #10131c;
+    --color-danger: #e5484d;
+    --color-success: #4cc38a;
+  }
+}
+
+/* Signature: task and ticket keys (WEB-42) as a small mono job tag, the same everywhere. */
+@utility job-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
